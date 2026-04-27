@@ -1,0 +1,76 @@
+blueprint:
+  domain: automation
+  name: Sonoff TRVZB External Temperature Sensor Calibration
+  description: |
+    ## Sonoff TRVZB External Temperature Sensor Calibration (v1.0.1)
+    This blueprint synchronises the local temperature of one or more Sonoff TRVZBs with an external temperature sensor. Such behaviour might be required when an external temperature sensor more accurately reflects the room temperature compared with the internal temperature sensor in the TRV(s), or when you wish to use a single temperature sensor to control multiple radiators in a single room.
+
+    The network protocol of the external temperature sensor is irrelevant (it can be Zigbee, WiFi etc.), but the device must broadcast temperature updates at least once within 2 hours to prevent fail-safe mode from activating on the TRV (see below).
+
+    Functionality is similar to that of the Sonoff ZBBridge: whenever the external temperature sensor reports the temperature, the TRV is updated with the external temperature.
+
+    Before using this blueprint, each TRV must be explicitly configured to use an external temperature sensor (setting available in Zigbee2MQTT v2.1.2+).
+
+    ### Software Requirements
+    - Sonoff TRVZB Firmware: 1.2.1+
+    - A Zigbee integration that exposes the TRV external temperature input entity (e.g. Zigbee2MQTT v2.1.2+)
+
+    ### Required Entities in Home Assistant
+    - The external temperature sensor value
+    - The external temperature input entity of one or more Sonoff TRVZBs.
+
+    ### Fail-safe Mode
+    The Sonoff TRVZB has a built-in fail-safe mode whereby if the device has been configured to use an external temperature sensor and the external temperature has not been received by the device for more than 2 hours, the device will revert to using the internal temperature sensor. This behaviour protects against overheating/freezing in scenarios such as when the external temperature sensor is unavailable (e.g. flat battery) or if the automation created by this blueprint is disabled. When the TRV receives the next external temperature update, it switches back to using the external temperature sensor.
+
+    ### Reporting Requirements for Zigbee External Temperatature Sensors
+
+    #### Temperature Accuracy (Min Rep Change)
+    Most battery powered Zigbee devices conserve power by broadcasting state changes only after a configured threshold in sensor value and/or time has been exceeded. In Zigbee2MQTT, these thresholds are configurable on the device "Reporting" page. If the external temperature sensor has a "Min Rep Change" value of 100, this typically means that updates will only be broadcast if the temperature changes by 1°C. Reducing this value to, say, 50 (0.5°C) will ensure that the external temperature sensor broadcasts updates more frequently, allowing the TRV to more accurately follow the temperature.
+
+    #### Constant Temperatures (Max Rep Interval)
+    To prevent the TRV from entering fail-safe mode, the external temperature has to be regularly sent to the TRV. This blueprint is triggered by changes made to any of the attributes of the external temperature sensor entity in Home Assistant. The "Max Rep Interval" reporting setting on a device specifies how long a Zigbee device must wait before rebroadcasting its state even if there have been no changes in value. A value of 3600 typically means the Zigbee device will report its state once every hour. It is advised to ensure this value remains under 7200 (2 hours) so that the device is still reporting during long periods of constant temperature.
+
+    If using Zigbee2MQTT, further configuration of the external temperature sensor may be required. By default, Zigbee2MQTT does not report back into Home Assistant if an entity's value has not changed, regardless of its reporting interval. To ensure this happens, the `force_update` setting on each external temperature sensor needs to be explicitly set. This is done by editing the Zigbee2MQTT `devices.yaml` file, as follows:
+
+    ```
+    '0xd44867fffe111ce1':
+      friendly_name: Kitchen Temperature Sensor
+      homeassistant:
+        temperature:
+          force_update: true
+    ```
+
+    By doing the above, the blueprint automation will be triggered by each report from the external temperature sensor, ensuring that fail-safe mode will not be activated on the TRV during a 2 hour period of constant temperature.
+
+  input:
+    external_temperature_sensor:
+      name: External Temperature Sensor
+      description: The entity of the external temperature sensor device that represents the temperature value.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: temperature
+
+    trv_external_temperature_input:
+      name: Sonoff TRVZB(s)
+      description: The entity of the Sonoff TRVZB device that represents the external temperature value.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: number
+              device_class: temperature
+
+triggers:
+  - trigger: state
+    entity_id: !input external_temperature_sensor
+variables:
+  external_temperature_sensor: !input external_temperature_sensor
+actions:
+  - action: number.set_value
+    metadata: {}
+    data:
+      value: "{{ states(external_temperature_sensor) | float }}"
+      entity_id: !input trv_external_temperature_input
+mode: single
