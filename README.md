@@ -50,6 +50,10 @@ This blueprint:
   seconds of the same minute. No randomness, no collisions.
 - 🐌 **Per-TRV delay** — short pause between consecutive TRV writes within a
   single instance.
+- 🔄 **Auto-ensure external sensor (v1.6+)** — before each cycle, the
+  blueprint checks the TRV's `temperature_sensor_select` entity and switches
+  it to `external` if it has drifted (e.g. after Z2M restart or fail-safe).
+  Configurable post-switch delay (default 3 s).
 - 🌡 **Sensor-agnostic** — Zigbee, Wi-Fi, Bluetooth, template — anything that
   exposes `device_class: temperature`.
 - 🛡 **Fail-safe friendly** — interval defaults stay well below the TRV's
@@ -94,6 +98,11 @@ This blueprint:
    - If you have multiple instances of this blueprint running, set
      **Start second offset** to a different value per instance — see below.
    - Optionally adjust **Delay between TRVs** (default: 2 s).
+   - Leave **Ensure TRV uses external sensor** on (default) — recommended
+     for default Z2M naming. Turn off if you have renamed entities so that
+     the auto-derived `select.<id>_temperature_sensor_select` no longer
+     matches your installation.
+   - Optionally adjust **Delay after switching to external** (default: 3 s).
 
 ### Multi-instance scheduling — avoiding Zigbee congestion
 
@@ -137,13 +146,42 @@ Two settings on the *external sensor* are worth checking:
   change. Keep below `7200` (2 h) so the device keeps reporting during long
   constant-temperature periods.
 
+### Auto-ensure external sensor — how it works
+
+The blueprint reads each TRV's `<id>_temperature_sensor_select` entity at
+the start of every cycle. If its state isn't `external`, the blueprint
+flips it via `select.select_option`, waits the configured delay (3 s by
+default), and only then pushes the temperature value. This protects
+against silent reverts to the internal sensor after Z2M restart, fail-safe
+trigger, or accidental manual change.
+
+The select entity_id is auto-derived from the TRV number entity_id:
+
+```
+number.<id>_external_temperature_input  →  select.<id>_temperature_sensor_select
+```
+
+E.g. `number.0x44e2f8fffe1a11f6_external_temperature_input` →
+`select.0x44e2f8fffe1a11f6_temperature_sensor_select`. This works for both
+IEEE-address and friendly-name styles.
+
+If you have renamed the select entity manually, turn the toggle off — the
+blueprint will then fall back to "push temperature only".
+
 ### Troubleshooting
 
 - **All instances fire in the same second.** You haven't set
   `start_offset_seconds` per instance — see the table above.
 - **TRV reverts to internal sensor.** External temperature hasn't been
   written for 2 h. Check the automation is enabled, the sensor is online,
-  and `force_update: true` is set in `devices.yaml` if using Z2M.
+  and `force_update: true` is set in `devices.yaml` if using Z2M. With
+  v1.6+, also confirm **Ensure TRV uses external sensor** is on.
+- **Auto-ensure does nothing.** The auto-derived select entity_id may not
+  match your installation. In Developer Tools → States, look up your TRV's
+  `temperature_sensor_select` entity and check whether the id matches the
+  pattern `select.<id>_temperature_sensor_select` where `<id>` is identical
+  to the one in your `number.<id>_external_temperature_input`. If not,
+  rename the entity to match Z2M defaults or turn the toggle off.
 - **Zigbee network stuttering.** Increase **Delay between TRVs** to 3–5 s,
   or split TRVs into more instances with different start offsets.
 
@@ -187,6 +225,10 @@ Ten blueprint:
   sekundach tej samej minuty. Bez losowości, bez kolizji.
 - 🐌 **Opóźnienie między TRV** — krótka pauza między kolejnymi zapisami
   w jednej instancji.
+- 🔄 **Auto-pilnowanie czujnika zewnętrznego (v1.6+)** — przed każdym cyklem
+  blueprint sprawdza encję `temperature_sensor_select` głowicy i przełącza
+  ją na `external`, jeśli się przestawiła (np. po restarcie Z2M lub
+  fail-safe). Konfigurowalne opóźnienie po przełączeniu (domyślnie 3 s).
 - 🌡 **Niezależny od typu czujnika** — Zigbee, Wi-Fi, Bluetooth, template
   — cokolwiek z `device_class: temperature`.
 - 🛡 **Zgodny z fail-safe** — domyślne interwały są wyraźnie poniżej
@@ -231,6 +273,12 @@ Ten blueprint:
    - Jeśli masz wiele instancji tego blueprintu, ustaw **Offset sekundy
      startu** na inną wartość w każdej instancji — patrz niżej.
    - Opcjonalnie dostosuj **Opóźnienie między TRV** (domyślnie: 2 s).
+   - Zostaw **Wymuś używanie zewnętrznego czujnika przez TRV** włączone
+     (domyślnie) — zalecane przy domyślnym nazewnictwie Z2M. Wyłącz, jeśli
+     zmieniłeś nazwy encji i wyliczona automatycznie nazwa
+     `select.<id>_temperature_sensor_select` nie odpowiada Twojej instalacji.
+   - Opcjonalnie dostosuj **Opóźnienie po przełączeniu na external**
+     (domyślnie: 3 s).
 
 ### Harmonogramowanie wielu instancji — unikanie zatkania Zigbee
 
@@ -274,6 +322,29 @@ Warto sprawdzić dwa ustawienia *czujnika zewnętrznego*:
   wartości. Trzymaj poniżej `7200` (2 h), aby urządzenie raportowało
   podczas długich okresów stałej temperatury.
 
+### Auto-pilnowanie czujnika zewnętrznego — jak to działa
+
+Blueprint odczytuje encję `<id>_temperature_sensor_select` każdej głowicy
+na początku każdego cyklu. Jeśli jej stan to nie `external`, blueprint
+przełącza ją przez `select.select_option`, czeka skonfigurowane opóźnienie
+(domyślnie 3 s) i dopiero wtedy wysyła wartość temperatury. To zabezpiecza
+przed cichym powrotem do wewnętrznego czujnika po restarcie Z2M, aktywacji
+fail-safe lub przypadkowej zmianie ręcznej.
+
+Encja select jest wyliczana automatycznie z entity_id wejścia temperatury
+TRV:
+
+```
+number.<id>_external_temperature_input  →  select.<id>_temperature_sensor_select
+```
+
+Np. `number.0x44e2f8fffe1a11f6_external_temperature_input` →
+`select.0x44e2f8fffe1a11f6_temperature_sensor_select`. Działa zarówno dla
+adresu IEEE, jak i friendly name.
+
+Jeśli zmieniłeś nazwę encji select ręcznie, wyłącz tę opcję — blueprint
+wróci do trybu "tylko wysyłaj temperaturę".
+
 ### Rozwiązywanie problemów
 
 - **Wszystkie instancje odpalają się w tej samej sekundzie.** Nie ustawiłeś
@@ -281,7 +352,14 @@ Warto sprawdzić dwa ustawienia *czujnika zewnętrznego*:
 - **TRV wraca do wewnętrznego czujnika.** Temperatura zewnętrzna nie była
   zapisana przez 2 h. Sprawdź, czy automatyzacja jest włączona, czy czujnik
   jest online, i czy `force_update: true` jest ustawione w `devices.yaml`
-  jeśli używasz Z2M.
+  jeśli używasz Z2M. W v1.6+ sprawdź też, czy **Wymuś używanie zewnętrznego
+  czujnika przez TRV** jest włączone.
+- **Auto-pilnowanie nie działa.** Wyliczona automatycznie nazwa encji
+  select może nie pasować do Twojej instalacji. W Narzędzia developerskie
+  → Stany znajdź encję `temperature_sensor_select` Twojego TRV i sprawdź,
+  czy id ma format `select.<id>_temperature_sensor_select`, gdzie `<id>`
+  jest takie samo jak w `number.<id>_external_temperature_input`. Jeśli
+  nie — zmień nazwę encji do domyślnej Z2M lub wyłącz tę opcję.
 - **Sieć Zigbee zacina się.** Zwiększ **Opóźnienie między TRV** do 3–5 s,
   albo rozdziel głowice na więcej instancji z różnymi offsetami startu.
 
@@ -294,9 +372,11 @@ MIT — see [`LICENSE`](./LICENSE).
 ## Credits / Podziękowania
 
 Originally based on the v1.0.1 blueprint by the Home Assistant community.
-This fork adds periodic interval triggering, multi-instance scheduling,
-per-TRV delay, and bilingual EN/PL documentation.
+This fork adds periodic interval triggering, deterministic multi-instance
+scheduling, per-TRV delay, auto-ensure external sensor (v1.6+), and
+bilingual EN/PL documentation.
 
 Pierwotnie oparte na blueprintcie v1.0.1 ze społeczności Home Assistant.
-Ten fork dodaje cykliczne wyzwalanie, harmonogramowanie wielu instancji,
-opóźnienia między TRV i dwujęzyczną dokumentację EN/PL.
+Ten fork dodaje cykliczne wyzwalanie, deterministyczne harmonogramowanie
+wielu instancji, opóźnienia między TRV, auto-pilnowanie zewnętrznego
+czujnika (v1.6+) oraz dwujęzyczną dokumentację EN/PL.
