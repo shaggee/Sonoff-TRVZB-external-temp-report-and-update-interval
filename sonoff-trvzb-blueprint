@@ -2,7 +2,7 @@ blueprint:
   domain: automation
   name: Sonoff TRVZB External Temperature Sensor Calibration (interval) / Kalibracja zewnętrznego czujnika temperatury Sonoff TRVZB (interwał)
   description: |
-    ## Sonoff TRVZB External Temperature Sensor Calibration (v1.4 — interval)
+    ## Sonoff TRVZB External Temperature Sensor Calibration (v1.5 — interval)
  
     Modified version: the automation is triggered periodically every X minutes
     (configurable) instead of on every state change of the external sensor.
@@ -44,18 +44,23 @@ blueprint:
     it switches back to using the external temperature sensor.
  
     ### Avoiding Zigbee Network Congestion (multiple instances)
-    Because the trigger is `time_pattern`, all instances of this blueprint fire at
-    the exact same second (e.g. 12:05:00). To avoid 4+ automations hitting the
-    Zigbee mesh simultaneously, this version supports:
+    Because the trigger is `time_pattern`, by default all instances of this blueprint
+    fire at the exact same second (e.g. 12:05:00). Random jitter inside the action
+    is unreliable in Home Assistant (Jinja can cache `random` results), so this
+    version uses a **deterministic per-instance second offset** plus per-TRV delay:
  
-    - **Random jitter** — each run waits a random number of seconds (0…N) before
-      writing to the first TRV. Setting different ranges per instance, or even just
-      enabling the same range on every instance, naturally spreads the writes.
-    - **Per-TRV delay** — when a single instance controls multiple TRVs, each write
-      is followed by a short delay so they don't go out as one burst.
+    - **Start second offset** — each instance fires at a different second within
+      the minute (0–59). For 5 instances with a 5-minute interval, set offsets
+      to e.g. 0, 12, 24, 36, 48 — they will fire 12 s apart, every cycle, forever.
+    - **Per-TRV delay** — when a single instance controls multiple TRVs, each
+      write is followed by a short delay so they don't go out as one burst.
  
-    For 4 separate instances, a jitter of 0–30 s combined with per-TRV delay of
-    1–2 s is usually enough to keep the mesh calm.
+    Recommended offsets:
+      - 2 instances: 0, 30
+      - 3 instances: 0, 20, 40
+      - 4 instances: 0, 15, 30, 45
+      - 5 instances: 0, 12, 24, 36, 48
+      - 6 instances: 0, 10, 20, 30, 40, 50
  
     ### Reporting Requirements for Zigbee External Temperature Sensors
  
@@ -105,7 +110,7 @@ blueprint:
  
     ---
  
-    ## Kalibracja zewnętrznego czujnika temperatury Sonoff TRVZB (v1.2 — interwał)
+    ## Kalibracja zewnętrznego czujnika temperatury Sonoff TRVZB (v1.5 — interwał)
  
     Wersja zmodyfikowana: automatyzacja wyzwala się cyklicznie co X minut
     (konfigurowalne) zamiast przy każdej zmianie stanu czujnika zewnętrznego.
@@ -148,19 +153,24 @@ blueprint:
     zewnętrzny.
  
     ### Unikanie zatkania sieci Zigbee (wiele instancji blueprintu)
-    Ponieważ wyzwalaczem jest `time_pattern`, wszystkie instancje blueprintu odpalają
-    się w tej samej sekundzie (np. 12:05:00). Aby uniknąć sytuacji, w której 4+
-    automatyzacje uderzają w sieć Zigbee jednocześnie, ta wersja obsługuje:
+    Ponieważ wyzwalaczem jest `time_pattern`, domyślnie wszystkie instancje
+    blueprintu odpalają się w tej samej sekundzie (np. 12:05:00). Losowy jitter
+    wewnątrz akcji jest w Home Assistant zawodny (Jinja potrafi cache'ować wynik
+    `random`), dlatego ta wersja używa **deterministycznego offsetu sekundy
+    startu per instancja** plus opóźnienia między TRV:
  
-    - **Losowe opóźnienie (jitter)** — każdy przebieg czeka losową liczbę sekund
-      (0…N) przed pierwszym zapisem do TRV. Wystarczy włączyć ten sam zakres na
-      każdej instancji, aby naturalnie rozłożyć zapisy w czasie.
-    - **Opóźnienie pomiędzy TRV** — gdy jedna instancja steruje wieloma głowicami,
-      każdy zapis jest poprzedzony krótką pauzą, dzięki czemu nie idą jednym
-      uderzeniem.
+    - **Offset sekundy startu** — każda instancja odpala się w innej sekundzie
+      minuty (0–59). Dla 5 instancji z interwałem 5 min ustaw offsety np. 0, 12,
+      24, 36, 48 — będą wyzwalane co 12 sekund, każdy cykl, deterministycznie.
+    - **Opóźnienie między TRV** — gdy jedna instancja steruje wieloma głowicami,
+      każdy zapis jest poprzedzony krótką pauzą, aby nie szły jednym uderzeniem.
  
-    Dla 4 osobnych instancji jitter 0–30 s plus opóźnienie 1–2 s między TRV zwykle
-    wystarcza, aby sieć była spokojna.
+    Zalecane offsety:
+      - 2 instancje: 0, 30
+      - 3 instancje: 0, 20, 40
+      - 4 instancje: 0, 15, 30, 45
+      - 5 instancji: 0, 12, 24, 36, 48
+      - 6 instancji: 0, 10, 20, 30, 40, 50
  
     ### Wymagania raportowania dla zewnętrznych czujników Zigbee
  
@@ -260,20 +270,22 @@ blueprint:
             - label: "Every hour / Co godzinę"
               value: "0"
  
-    max_jitter_seconds:
-      name: Random start delay (jitter) / Losowe opóźnienie startu (jitter)
+    start_offset_seconds:
+      name: Start second offset / Offset sekundy startu
       description: >-
-        EN: Maximum random delay in seconds before the first TRV write. Spreads
-        multiple blueprint instances in time so they don't hit the Zigbee mesh
-        at the same second. Set to 0 to disable.
-        PL: Maksymalne losowe opóźnienie w sekundach przed pierwszym zapisem do
-        TRV. Rozkłada w czasie wiele instancji blueprintu, aby nie uderzały
-        w sieć Zigbee w tej samej sekundzie. 0 = wyłączone.
-      default: 30
+        EN: At which second of the minute this instance fires (0–59). Set a
+        different value for each blueprint instance to deterministically spread
+        them in time and avoid Zigbee congestion. E.g. for 4 instances use
+        0, 15, 30, 45.
+        PL: W której sekundzie minuty wyzwala się ta instancja (0–59). Ustaw
+        inną wartość dla każdej instancji blueprintu, aby deterministycznie
+        rozłożyć je w czasie i uniknąć zatkania sieci Zigbee. Np. dla 4
+        instancji ustaw 0, 15, 30, 45.
+      default: 0
       selector:
         number:
           min: 0
-          max: 120
+          max: 59
           unit_of_measurement: s
           mode: slider
           step: 1
@@ -299,19 +311,12 @@ blueprint:
 triggers:
   - trigger: time_pattern
     minutes: !input update_interval
+    seconds: !input start_offset_seconds
 variables:
   external_temperature_sensor: !input external_temperature_sensor
   trv_entities: !input trv_external_temperature_input
-  max_jitter_seconds: !input max_jitter_seconds
   per_trv_delay_seconds: !input per_trv_delay_seconds
 actions:
-  - alias: "Random jitter to spread instances in time / Losowy jitter rozkładający instancje w czasie"
-    if:
-      - condition: template
-        value_template: "{{ (max_jitter_seconds | int) > 0 }}"
-    then:
-      - delay:
-          seconds: "{{ range(0, (max_jitter_seconds | int) + 1) | random }}"
   - alias: "Write external temperature to each TRV / Zapis temperatury zewnętrznej do każdego TRV"
     repeat:
       for_each: "{{ trv_entities }}"
