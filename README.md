@@ -52,7 +52,9 @@ This blueprint:
   single instance.
 - 🔄 **Auto-ensure external sensor (v1.6+)** — before each cycle, the
   blueprint checks the TRV's `temperature_sensor_select` entity and switches
-  it to `external` if it has drifted (e.g. after Z2M restart or fail-safe).
+  it to the external-sensor option if it has drifted (e.g. after Z2M restart
+  or fail-safe). Since v1.7 the option name is detected automatically:
+  `remote_temperature` (newer Z2M) or `external` (older Z2M).
   Configurable post-switch delay (default 3 s).
 - 🌡 **Sensor-agnostic** — Zigbee, Wi-Fi, Bluetooth, template — anything that
   exposes `device_class: temperature`.
@@ -149,7 +151,8 @@ Two settings on the *external sensor* are worth checking:
 ### Auto-ensure external sensor — how it works
 
 The blueprint reads each TRV's `<id>_temperature_sensor_select` entity at
-the start of every cycle. If its state isn't `external`, the blueprint
+the start of every cycle. If its state isn't the external-sensor option,
+the blueprint
 flips it via `select.select_option`, waits the configured delay (3 s by
 default), and only then pushes the temperature value. This protects
 against silent reverts to the internal sensor after Z2M restart, fail-safe
@@ -168,6 +171,16 @@ IEEE-address and friendly-name styles.
 If you have renamed the select entity manually, turn the toggle off — the
 blueprint will then fall back to "push temperature only".
 
+The option name is read from the select entity's `options` attribute (v1.7+):
+
+| Zigbee2MQTT | Options | Option used |
+|---|---|---|
+| newer | `local_temperature`, `remote_temperature`, `remote_source_offline` | `remote_temperature` |
+| older (2.1.2+) | `internal`, `external` | `external` |
+
+If neither option is offered, the switch step is skipped and the temperature
+is still pushed.
+
 ### Troubleshooting
 
 - **All instances fire in the same second.** You haven't set
@@ -182,6 +195,10 @@ blueprint will then fall back to "push temperature only".
   pattern `select.<id>_temperature_sensor_select` where `<id>` is identical
   to the one in your `number.<id>_external_temperature_input`. If not,
   rename the entity to match Z2M defaults or turn the toggle off.
+- **`Option external is not valid for entity select…_temperature_sensor_select`.**
+  You are on v1.6 or older with a newer Zigbee2MQTT that renamed the option
+  to `remote_temperature`. In v1.6 this error stopped the whole run, so the
+  temperature was never pushed. Update the blueprint to v1.7+.
 - **Zigbee network stuttering.** Increase **Delay between TRVs** to 3–5 s,
   or split TRVs into more instances with different start offsets.
 
@@ -227,8 +244,9 @@ Ten blueprint:
   w jednej instancji.
 - 🔄 **Auto-pilnowanie czujnika zewnętrznego (v1.6+)** — przed każdym cyklem
   blueprint sprawdza encję `temperature_sensor_select` głowicy i przełącza
-  ją na `external`, jeśli się przestawiła (np. po restarcie Z2M lub
-  fail-safe). Konfigurowalne opóźnienie po przełączeniu (domyślnie 3 s).
+  ją na opcję czujnika zewnętrznego, jeśli się przestawiła (np. po restarcie
+  Z2M lub fail-safe). Od v1.7 nazwa opcji jest wykrywana automatycznie:
+  `remote_temperature` (nowszy Z2M) lub `external` (starszy Z2M). Konfigurowalne opóźnienie po przełączeniu (domyślnie 3 s).
 - 🌡 **Niezależny od typu czujnika** — Zigbee, Wi-Fi, Bluetooth, template
   — cokolwiek z `device_class: temperature`.
 - 🛡 **Zgodny z fail-safe** — domyślne interwały są wyraźnie poniżej
@@ -325,7 +343,8 @@ Warto sprawdzić dwa ustawienia *czujnika zewnętrznego*:
 ### Auto-pilnowanie czujnika zewnętrznego — jak to działa
 
 Blueprint odczytuje encję `<id>_temperature_sensor_select` każdej głowicy
-na początku każdego cyklu. Jeśli jej stan to nie `external`, blueprint
+na początku każdego cyklu. Jeśli jej stan to nie opcja czujnika
+zewnętrznego, blueprint
 przełącza ją przez `select.select_option`, czeka skonfigurowane opóźnienie
 (domyślnie 3 s) i dopiero wtedy wysyła wartość temperatury. To zabezpiecza
 przed cichym powrotem do wewnętrznego czujnika po restarcie Z2M, aktywacji
@@ -345,6 +364,16 @@ adresu IEEE, jak i friendly name.
 Jeśli zmieniłeś nazwę encji select ręcznie, wyłącz tę opcję — blueprint
 wróci do trybu "tylko wysyłaj temperaturę".
 
+Nazwa opcji jest odczytywana z atrybutu `options` encji select (v1.7+):
+
+| Zigbee2MQTT | Opcje | Używana opcja |
+|---|---|---|
+| nowszy | `local_temperature`, `remote_temperature`, `remote_source_offline` | `remote_temperature` |
+| starszy (2.1.2+) | `internal`, `external` | `external` |
+
+Jeśli żadna z tych opcji nie jest dostępna, krok przełączania jest pomijany,
+a temperatura i tak zostaje wysłana.
+
 ### Rozwiązywanie problemów
 
 - **Wszystkie instancje odpalają się w tej samej sekundzie.** Nie ustawiłeś
@@ -360,8 +389,27 @@ wróci do trybu "tylko wysyłaj temperaturę".
   czy id ma format `select.<id>_temperature_sensor_select`, gdzie `<id>`
   jest takie samo jak w `number.<id>_external_temperature_input`. Jeśli
   nie — zmień nazwę encji do domyślnej Z2M lub wyłącz tę opcję.
+- **`Option external is not valid for entity select…_temperature_sensor_select`.**
+  Masz v1.6 lub starszą z nowszym Zigbee2MQTT, który zmienił nazwę opcji
+  na `remote_temperature`. W v1.6 ten błąd przerywał cały przebieg, więc
+  temperatura w ogóle nie była wysyłana. Zaktualizuj blueprint do v1.7+.
 - **Sieć Zigbee zacina się.** Zwiększ **Opóźnienie między TRV** do 3–5 s,
   albo rozdziel głowice na więcej instancji z różnymi offsetami startu.
+
+---
+
+## Changelog / Historia zmian
+
+### v1.7
+
+- 🇬🇧 Fix: newer Zigbee2MQTT renamed the TRVZB `temperature_sensor_select`
+  option `external` → `remote_temperature`. The blueprint now detects the
+  correct option from the entity and no longer stops before pushing the
+  temperature.
+- 🇵🇱 Poprawka: nowszy Zigbee2MQTT zmienił opcję `temperature_sensor_select`
+  w TRVZB z `external` na `remote_temperature`. Blueprint wykrywa teraz
+  właściwą opcję z encji i nie przerywa działania przed wysłaniem
+  temperatury.
 
 ---
 

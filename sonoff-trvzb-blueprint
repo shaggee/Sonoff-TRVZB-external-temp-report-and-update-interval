@@ -2,13 +2,13 @@ blueprint:
   domain: automation
   name: Sonoff TRVZB External Temperature Sensor Calibration (interval) / Kalibracja zewnętrznego czujnika temperatury Sonoff TRVZB (interwał)
   description: |
-    ## Sonoff TRVZB External Temperature Sensor Calibration (v1.6 — interval)
+    ## Sonoff TRVZB External Temperature Sensor Calibration (v1.7 — interval)
  
     Modified version: the automation is triggered periodically every X minutes
     (configurable) instead of on every state change of the external sensor.
     It also automatically ensures the TRV is configured to use its external
     temperature sensor — if the TRV's `temperature_sensor_select` entity is
-    not set to `external`, the blueprint switches it before sending the
+    not set to the external-sensor option (`remote_temperature`, or `external` on older Z2M), the blueprint switches it before sending the
     temperature value (configurable, default delay: 3 s).
  
     This blueprint synchronises the local temperature of one or more Sonoff TRVZBs
@@ -42,8 +42,8 @@ blueprint:
  
     ### Auto-ensure External Sensor (v1.6+)
     On every cycle, before pushing the temperature value, the blueprint checks
-    the TRV's `<id>_temperature_sensor_select` entity. If it is not set to
-    `external`, the blueprint switches it and waits a few seconds (configurable,
+    the TRV's `<id>_temperature_sensor_select` entity. If it is not set to the
+    external-sensor option, the blueprint switches it and waits a few seconds (configurable,
     default 3 s) before writing the temperature. This protects against the TRV
     silently reverting to its internal sensor after Z2M restart, device re-pair,
     fail-safe trigger, or accidental manual change.
@@ -55,6 +55,10 @@ blueprint:
  
     If you have renamed entities, this auto-derivation may not work — disable
     the toggle in that case.
+ 
+    The option name is detected from the select entity (v1.7+): newer
+    Zigbee2MQTT versions use `remote_temperature` (options: `local_temperature`,
+    `remote_temperature`, `remote_source_offline`), older ones use `external`.
  
     ### Fail-safe Mode
     The Sonoff TRVZB has a built-in fail-safe mode whereby if the device has been
@@ -133,13 +137,13 @@ blueprint:
  
     ---
  
-    ## Kalibracja zewnętrznego czujnika temperatury Sonoff TRVZB (v1.6 — interwał)
+    ## Kalibracja zewnętrznego czujnika temperatury Sonoff TRVZB (v1.7 — interwał)
  
     Wersja zmodyfikowana: automatyzacja wyzwala się cyklicznie co X minut
     (konfigurowalne) zamiast przy każdej zmianie stanu czujnika zewnętrznego.
     Dodatkowo automatycznie pilnuje, aby TRV było ustawione na zewnętrzny
     czujnik temperatury — jeśli encja `temperature_sensor_select` głowicy
-    nie jest ustawiona na `external`, blueprint przełącza ją przed
+    nie jest ustawiona na opcję czujnika zewnętrznego (`remote_temperature`, a w starszym Z2M `external`), blueprint przełącza ją przed
     wysłaniem wartości temperatury (konfigurowalne, domyślne opóźnienie: 3 s).
  
     Blueprint synchronizuje lokalną temperaturę jednej lub wielu głowic Sonoff TRVZB
@@ -174,7 +178,7 @@ blueprint:
     ### Auto-pilnowanie czujnika zewnętrznego (v1.6+)
     Przy każdym cyklu, przed wysłaniem wartości temperatury, blueprint sprawdza
     encję `<id>_temperature_sensor_select` głowicy. Jeśli nie jest ustawiona
-    na `external`, blueprint ją przełącza i czeka kilka sekund (konfigurowalne,
+    na opcję czujnika zewnętrznego, blueprint ją przełącza i czeka kilka sekund (konfigurowalne,
     domyślnie 3 s) przed zapisem temperatury. To zabezpiecza przed cichym
     powrotem TRV do wewnętrznego czujnika po restarcie Z2M, ponownym sparowaniu
     urządzenia, aktywacji fail-safe lub przypadkowej zmianie ręcznej.
@@ -186,6 +190,10 @@ blueprint:
  
     Jeśli zmieniłeś nazwy encji, ta automatyczna konwersja może nie zadziałać —
     w takim wypadku wyłącz tę opcję.
+ 
+    Nazwa opcji jest wykrywana z encji select (v1.7+): nowsze wersje
+    Zigbee2MQTT używają `remote_temperature` (opcje: `local_temperature`,
+    `remote_temperature`, `remote_source_offline`), starsze — `external`.
  
     ### Tryb fail-safe
     Sonoff TRVZB ma wbudowany tryb fail-safe: jeśli urządzenie zostało skonfigurowane
@@ -357,14 +365,14 @@ blueprint:
       name: Ensure TRV uses external sensor / Wymuś używanie zewnętrznego czujnika przez TRV
       description: >-
         EN: Before each temperature write, check the TRV's
-        `<id>_temperature_sensor_select` entity. If it is not set to `external`,
+        `<id>_temperature_sensor_select` entity. If it is not set to the external-sensor option (`remote_temperature` or `external`),
         switch it automatically. The select entity_id is derived from the TRV
         external-temperature number entity_id by replacing `number.` →
         `select.` and `_external_temperature_input` →
         `_temperature_sensor_select` (Z2M default naming).
         PL: Przed każdym zapisem temperatury sprawdza encję
         `<id>_temperature_sensor_select` głowicy. Jeśli nie jest ustawiona
-        na `external`, automatycznie ją przełącza. Encja select jest
+        na opcję czujnika zewnętrznego (`remote_temperature` lub `external`), automatycznie ją przełącza. Encja select jest
         wyliczana z entity_id wejścia temperatury zewnętrznej TRV przez
         zamianę `number.` → `select.` oraz `_external_temperature_input` →
         `_temperature_sensor_select` (domyślne nazewnictwo Z2M).
@@ -412,19 +420,24 @@ actions:
                  | replace('number.', 'select.')
                  | replace('_external_temperature_input', '_temperature_sensor_select') }}
             select_state: "{{ states(select_entity) }}"
+            select_options: "{{ state_attr(select_entity, 'options') or [] }}"
+            target_option: >-
+              {{ 'remote_temperature' if 'remote_temperature' in select_options
+                 else 'external' }}
         - alias: "Switch TRV to external sensor if needed / Przełącz TRV na czujnik zewnętrzny w razie potrzeby"
           if:
             - condition: template
               value_template: >-
                 {{ ensure_external_sensor
-                   and select_state not in ['external', 'unavailable', 'unknown', 'none'] }}
+                   and target_option in select_options
+                   and select_state not in [target_option, 'unavailable', 'unknown', 'none'] }}
           then:
             - action: select.select_option
               continue_on_error: true
               target:
                 entity_id: "{{ select_entity }}"
               data:
-                option: external
+                option: "{{ target_option }}"
             - delay:
                 seconds: "{{ external_sensor_set_delay | int }}"
         - alias: "Push external temperature to TRV / Wyślij temperaturę zewnętrzną do TRV"
